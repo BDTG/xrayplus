@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "com.bdtg.xrayplus.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "xrayplus.refmap.json",
+  "mixins": [],
+  "client": [
+    "ModelBlockRendererMixin",
+    "LightTextureMixin",
+    "EmbeddiumBlockRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

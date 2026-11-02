@@ -1,0 +1,167 @@
+package com.bdtg.xrayplus.core;
+
+import com.bdtg.xrayplus.XrayPlus;
+import com.bdtg.xrayplus.client.ClientHooks;
+import com.bdtg.xrayplus.config.XrayConfig;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraftforge.registries.ForgeRegistries;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Runtime state of the mod. The visible-block set is rebuilt from the config and swapped in
+ * atomically, so chunk builder threads always read a consistent set.
+ */
+public final class XrayState {
+    private static volatile boolean active = false;
+    private static volatile Set<Block> visible = Collections.emptySet();
+    private static volatile List<String> activeGroups = List.of();
+
+    private XrayState() {
+    }
+
+    public static boolean isActive() {
+        return active;
+    }
+
+    public static int visibleCount() {
+        return visible.size();
+    }
+
+    public static List<String> activeGroupIds() {
+        return activeGroups;
+    }
+
+    /**
+     * Called from the chunk mesh builder for every block. Must stay allocation free and cheap:
+     * it runs millions of times while terrain is being built.
+     */
+    public static boolean shouldHide(BlockState state) {
+        if (!active) {
+            return false;
+        }
+        Block block = state.getBlock();
+        return block != Blocks.AIR && !visible.contains(block);
+    }
+
+    public static void toggle() {
+        setActive(!active);
+    }
+
+    /** Applies the persisted state without saving or rebuilding the world (used at startup). */
+    public static void setActiveSilently(boolean value) {
+        active = value;
+    }
+
+    /** Sorted registry ids of everything Xray currently keeps visible (for /xray list). */
+    public static List<String> visibleBlockIds() {
+        List<ResourceLocation> ids = new ArrayList<>(visible.size());
+        for (Block block : visible) {
+            ResourceLocation id = ForgeRegistries.BLOCKS.getKey(block);
+            if (id != null) {
+                ids.add(id);
+            }
+        }
+        ids.sort(ResourceLocation::compareTo);
+        List<String> out = new ArrayList<>(ids.size());
+        for (ResourceLocation id : ids) {
+            out.add(id.toString());
+        }
+        return out;
+    }
+
+    public static void setActive(boolean value) {
+        if (value) {
+            rebuild();
+        }
+        active = value;
+        XrayConfig.get().enabled = value;
+        XrayConfig.save();
+        XrayPlus.LOGGER.info("[XrayPlus] Xray {}", value ? "enabled" : "disabled");
+        ClientHooks.refreshWorld();
+    }
+
+    /** Re-resolves groups/tags and block ids into a plain Set<Block>. */
+    public static void rebuild() {
+        XrayConfig cfg = XrayConfig.get();
+        Set<Block> set = new HashSet<>(256);
+        List<String> groups = new ArrayList<>();
+
+        for (XrayConfig.Group group : cfg.groups) {
+            if (!group.enabled) {
+                continue;
+            }
+            groups.add(group.id);
+            for (String tagId : group.tags) {
+                try {
+                    TagKey<Block> key = TagKey.create(Registries.BLOCK, new ResourceLocation(tagId));
+                    BuiltInRegistries.BLOCK.getTag(key).ifPresent(holders ->
+                            holders.forEach(holder -> set.add(holder.value())));
+                } catch (Exception e) {
+                    XrayPlus.LOGGER.warn("[XrayPlus] Skipping bad block tag '{}'", tagId);
+                }
+            }
+            for (String blockId : group.blocks) {
+                Block block = resolve(blockId);
+                if (block != null) {
+                    set.add(block);
+                }
+            }
+        }
+
+        for (String blockId : cfg.extraBlocks) {
+            Block block = resolve(blockId);
+            if (block != null) {
+                set.add(block);
+            }
+        }
+
+        if (cfg.nameHeuristic) {
+            for (Block block : ForgeRegistries.BLOCKS) {
+                ResourceLocation id = ForgeRegistries.BLOCKS.getKey(block);
+                if (id == null) {
+                    continue;
+                }
+                String path = id.getPath();
+                if (path.endsWith("_ore") || path.startsWith("ore_") || path.contains("_ore_")
+                        || path.contains("raw_") && path.endsWith("_block")) {
+                    set.add(block);
+                }
+            }
+        }
+
+        for (String blockId : cfg.blacklist) {
+            Block block = resolve(blockId);
+            if (block != null) {
+                set.remove(block);
+            }
+        }
+
+        set.add(Blocks.AIR);
+        visible = set;
+        activeGroups = List.copyOf(groups);
+        XrayPlus.LOGGER.debug("[XrayPlus] {} visible blocks from groups {}", set.size(), groups);
+    }
+
+    public static Block resolve(String id) {
+        try {
+            ResourceLocation rl = ResourceLocation.tryParse(id);
+            if (rl == null) {
+                return null;
+            }
+            return ForgeRegistries.BLOCKS.getValue(rl);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+}
