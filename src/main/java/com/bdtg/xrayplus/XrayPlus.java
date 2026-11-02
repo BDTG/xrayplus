@@ -1,7 +1,6 @@
 package com.bdtg.xrayplus;
 
 import com.bdtg.xrayplus.client.ClientBootstrap;
-import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import com.mojang.logging.LogUtils;
@@ -22,6 +21,5 @@ public final class XrayPlus {
         if (net.minecraftforge.fml.loading.FMLEnvironment.dist.isClient()) {
             ClientBootstrap.init(FMLJavaModLoadingContext.get().getModEventBus());
         }
-        ModLoadingContext.get();
     }
 }

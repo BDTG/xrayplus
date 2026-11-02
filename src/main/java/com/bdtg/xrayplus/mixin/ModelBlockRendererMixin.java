@@ -32,14 +32,14 @@ public abstract class ModelBlockRendererMixin {
             + "Lnet/minecraft/core/BlockPos;"
             + "Lcom/mojang/blaze3d/vertex/PoseStack;"
             + "Lcom/mojang/blaze3d/vertex/VertexConsumer;"
-            + "ZLnet/minecraft/util/RandomSource;J"
+            + "ZLnet/minecraft/util/RandomSource;JI"
             + "Lnet/minecraftforge/client/model/data/ModelData;"
             + "Lnet/minecraft/client/renderer/RenderType;)V";
 
     @Inject(method = "tesselateWithAO" + DESC, at = @At("HEAD"), cancellable = true, remap = false)
     private void xrayplus$hideWithAo(BlockAndTintGetter level, BakedModel model, BlockState state,
                                      BlockPos pos, PoseStack poseStack, VertexConsumer consumer,
-                                     boolean checkSides, RandomSource random, long seed,
+                                     boolean checkSides, RandomSource random, long seed, int packedOverlay,
                                      ModelData modelData, RenderType renderType, CallbackInfo ci) {
         if (XrayState.shouldHide(state)) {
             ci.cancel();
@@ -49,7 +49,7 @@ public abstract class ModelBlockRendererMixin {
     @Inject(method = "tesselateWithoutAO" + DESC, at = @At("HEAD"), cancellable = true, remap = false)
     private void xrayplus$hideWithoutAo(BlockAndTintGetter level, BakedModel model, BlockState state,
                                         BlockPos pos, PoseStack poseStack, VertexConsumer consumer,
-                                        boolean checkSides, RandomSource random, long seed,
+                                        boolean checkSides, RandomSource random, long seed, int packedOverlay,
                                         ModelData modelData, RenderType renderType, CallbackInfo ci) {
         if (XrayState.shouldHide(state)) {
             ci.cancel();

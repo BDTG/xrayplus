@@ -9,7 +9,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraftforge.client.ConfigScreenHandler;
 import net.minecraftforge.client.event.RegisterClientCommandsEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
-import net.minecraftforge.client.event.RenderGuiEvent;
+import net.minecraftforge.client.event.RenderGuiOverlayEvent;
+import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.client.settings.KeyConflictContext;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
@@ -99,8 +100,10 @@ public final class ClientBootstrap {
         }
 
         @SubscribeEvent
-        public static void onRenderGui(RenderGuiEvent.Post event) {
-            XrayHud.render(event.getGuiGraphics());
+        public static void onRenderOverlay(RenderGuiOverlayEvent.Post event) {
+            if (event.getOverlay().id().equals(VanillaGuiOverlay.HOTBAR.id())) {
+                XrayHud.render(event.getGuiGraphics());
+            }
         }
     }
 }

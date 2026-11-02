@@ -116,12 +116,39 @@ nên không cần F3+A bằng tay.
 ## Giới hạn đã biết
 
 - **Occlusion culling**: cả vanilla lẫn Embeddium đều bỏ qua những *section* 16×16×16 bị đá bịt kín
-  hoàn toàn; Xray chỉ ẩn khối, không tắt culling. Vì vậy quặng nằm trong section kín mít có thể không
-  hiện cho tới khi bạn lại gần/đứng trong hang. Đứng trong hang hoặc trong mỏ thì thấy đầy đủ.
+  hoàn toàn. Với pack có Embeddium, XrayPlus tự tắt occlusion culling của Embeddium khi bật Xray
+  (`OcclusionCuller#findVisible` → `useOcclusionCulling = false`), nên quặng trong section kín vẫn
+  hiện. Nếu chạy **không** có Embeddium/Sodium thì chỉ có hook vanilla và quặng trong section kín
+  hoàn toàn có thể không hiện.
 - **Shader pack (Oculus)**: fullbright dùng lightmap nên vẫn ăn với phần lớn shader, nhưng một số
   shader tự tính ánh sáng từ shadow map — khi đó bật/tắt shader sẽ thấy khác nhau.
 - Không ẩn chất lỏng (nước/dung nham) vì chúng đi qua `LiquidBlockRenderer`/`FluidRenderer` riêng.
 - Không có "cave finder"/"chỉ hiện block trong suốt" — cố tình giữ mod nhỏ và ít xung đột.
+
+## Ảnh chụp thật (Soulrend v8.5.2, Forge 1.20.1, 509 mod)
+
+Cùng một khu vực spawn, chụp thẳng từ cửa sổ game:
+
+| Xray tắt | Xray bật (`` ` ``) |
+|---|---|
+| ![off](docs/xray-off.png) | ![on](docs/xray-on.png) |
+
+Ảnh bên phải: địa hình biến mất, chỉ còn quặng/khối trong danh sách hiện lên, lightmap bị ghi trắng
+nên ban đêm vẫn sáng, góc trên trái có HUD `XRAY ores+containers+spawners`.
+
+## Kiểm chứng thực tế
+
+Đã chạy trong chính instance `Soulrend - Dark Fantasy RPG Soulslike` (509 mod, Embeddium 0.3.31 + Oculus):
+
+- `latest.log`: `- xrayplus 1.0.0` trong danh sách mod, `[XrayPlus] Client bootstrap complete (34 blocks visible)`.
+- `debug.log`: Mixin áp thành công — `Mixing ModelBlockRendererMixin ... into net.minecraft.client.renderer.block.ModelBlockRenderer`,
+  `Mixing LightTextureMixin ... into net.minecraft.client.renderer.LightTexture`.
+- Embeddium xác nhận hook của mod trên class của nó:
+  `Mod(s) [xrayplus, copycats] are modifying Embeddium class ...pipeline.BlockRenderer` và
+  `[flerovium, xrayplus] are modifying ...occlusion.OcclusionCuller`.
+- Sau khi vào thế giới, tag `forge:ores` được bind lại: **95 block** hiển thị (34 lúc mới load mod, vì tag chưa có).
+- Build kiểm thử có một hook tạm (đã xoá trước khi release) ghi lại trạng thái runtime:
+  `active=true visible=95 fullbright=true`.
 
 ## Build từ source
 

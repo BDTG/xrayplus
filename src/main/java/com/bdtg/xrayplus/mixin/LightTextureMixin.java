@@ -21,32 +21,28 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(LightTexture.class)
 public abstract class LightTextureMixin {
     @Shadow
-    private NativeImage lightTextureImage;
+    private NativeImage lightPixels;
 
     @Shadow
     private DynamicTexture lightTexture;
-
-    @Shadow
-    private boolean needsUpdate;
 
     @Inject(method = "updateLightTexture(F)V", at = @At("HEAD"), cancellable = true)
     private void xrayplus$forceFullbright(float partialTicks, CallbackInfo ci) {
         if (!XrayState.isActive() || !XrayConfig.get().fullbright) {
             return;
         }
-        NativeImage image = this.lightTextureImage;
+        NativeImage pixels = this.lightPixels;
         DynamicTexture texture = this.lightTexture;
-        if (image == null || texture == null) {
+        if (pixels == null || texture == null) {
             return;
         }
         for (int y = 0; y < 16; y++) {
             for (int x = 0; x < 16; x++) {
-                image.setPixelRGBA(x, y, 0xFFFFFFFF);
+                pixels.setPixelRGBA(x, y, 0xFFFFFFFF);
             }
         }
         texture.upload();
         RenderSystem.setShaderTexture(2, texture.getId());
-        this.needsUpdate = false;
         ci.cancel();
     }
 }

@@ -55,8 +55,8 @@ mixin {
 
 repositories {
     maven {
-        name = 'Sponge'
-        url = 'https://repo.spongepowered.org/repository/maven-public/'
+        name = 'MinecraftForge'
+        url = 'https://maven.minecraftforge.net/'
     }
     mavenCentral()
 }
