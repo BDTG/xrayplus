@@ -31,6 +31,19 @@ public final class XrayConfig {
     /** Automatically include any block whose registry path looks like an ore (…_ore, raw_…). */
     public boolean nameHeuristic = true;
 
+    /** "esp" = keep terrain, draw boxes around targets; "xray" = hide terrain (classic). */
+    public String mode = "esp";
+    /** Block radius scanned for ESP boxes (chunks around the player). */
+    public int espRadius = 48;
+    /** Draw ESP boxes through walls (no depth test). */
+    public boolean espThroughWalls = true;
+    /** Hard cap on rendered boxes so big caves stay smooth. */
+    public int espMaxBlocks = 400;
+    /** In xray mode, draw faint silhouettes of nearby solid blocks so you can still navigate. */
+    public boolean outlineTerrain = true;
+    /** Radius of that silhouette pass. */
+    public int outlineRadius = 10;
+
     public List<Group> groups = defaultGroups();
     public List<String> extraBlocks = new ArrayList<>();
     public List<String> blacklist = new ArrayList<>();
@@ -40,6 +53,8 @@ public final class XrayConfig {
         public boolean enabled;
         public List<String> tags = new ArrayList<>();
         public List<String> blocks = new ArrayList<>();
+        /** Optional ESP colour, e.g. "#FFC24A"; null = colour for the group id. */
+        public String color = null;
 
         public Group() {
         }
@@ -49,6 +64,27 @@ public final class XrayConfig {
             this.enabled = enabled;
             this.tags = new ArrayList<>(tags);
             this.blocks = new ArrayList<>(blocks);
+        }
+
+        public int color() {
+            if (color != null && !color.isBlank()) {
+                try {
+                    String hex = color.startsWith("#") ? color.substring(1) : color.trim();
+                    if (hex.length() == 6) {
+                        hex = "FF" + hex;
+                    }
+                    return (int) Long.parseLong(hex, 16);
+                } catch (Exception ignored) {
+                    // fall through to the per-group default
+                }
+            }
+            return switch (id == null ? "" : id) {
+                case "ores" -> 0xFFFFC24A;
+                case "containers" -> 0xFF6BE07A;
+                case "spawners" -> 0xFFFF5A5A;
+                case "portals" -> 0xFFB98CFF;
+                default -> 0xFFFFC24A;
+            };
         }
     }
 

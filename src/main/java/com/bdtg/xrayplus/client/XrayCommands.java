@@ -3,6 +3,7 @@ package com.bdtg.xrayplus.client;
 import com.bdtg.xrayplus.config.XrayConfig;
 import com.bdtg.xrayplus.core.XrayState;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.ChatFormatting;
@@ -46,6 +47,21 @@ public final class XrayCommands {
                         .executes(ctx -> flag(ctx, "heuristic", !XrayConfig.get().nameHeuristic))
                         .then(Commands.literal("on").executes(ctx -> flag(ctx, "heuristic", true)))
                         .then(Commands.literal("off").executes(ctx -> flag(ctx, "heuristic", false))))
+                .then(Commands.literal("mode")
+                        .executes(ctx -> mode(ctx, null))
+                        .then(Commands.literal("esp").executes(ctx -> mode(ctx, "esp")))
+                        .then(Commands.literal("xray").executes(ctx -> mode(ctx, "xray"))))
+                .then(Commands.literal("radius")
+                        .then(Commands.argument("blocks", IntegerArgumentType.integer(8, 96))
+                                .executes(ctx -> radius(ctx))))
+                .then(Commands.literal("through")
+                        .executes(ctx -> flag(ctx, "through", !XrayConfig.get().espThroughWalls))
+                        .then(Commands.literal("on").executes(ctx -> flag(ctx, "through", true)))
+                        .then(Commands.literal("off").executes(ctx -> flag(ctx, "through", false))))
+                .then(Commands.literal("outline")
+                        .executes(ctx -> flag(ctx, "outline", !XrayConfig.get().outlineTerrain))
+                        .then(Commands.literal("on").executes(ctx -> flag(ctx, "outline", true)))
+                        .then(Commands.literal("off").executes(ctx -> flag(ctx, "outline", false))))
                 .then(Commands.literal("groups").executes(ctx -> groups(ctx)))
                 .then(Commands.literal("group")
                         .then(Commands.argument("id", StringArgumentType.word())
@@ -79,6 +95,9 @@ public final class XrayCommands {
     private static int status(CommandContext<CommandSourceStack> ctx) {
         XrayConfig cfg = XrayConfig.get();
         feedback(ctx, "enabled=" + XrayState.isActive()
+                + " mode=" + XrayState.mode()
+                + " radius=" + cfg.espRadius
+                + " through=" + cfg.espThroughWalls
                 + " blocks=" + XrayState.visibleCount()
                 + " groups=" + String.join(",", XrayState.activeGroupIds())
                 + " fullbright=" + cfg.fullbright
@@ -109,15 +128,40 @@ public final class XrayCommands {
             case "fullbright" -> cfg.fullbright = value;
             case "hud" -> cfg.hud = value;
             case "heuristic" -> cfg.nameHeuristic = value;
+            case "through" -> cfg.espThroughWalls = value;
+            case "outline" -> cfg.outlineTerrain = value;
             default -> {
             }
         }
         XrayConfig.save();
         if (name.equals("fullbright") || name.equals("heuristic")) {
             XrayState.rebuild();
-            ClientHooks.refreshWorld();
+            ClientHooks.onModeChanged();
         }
         feedback(ctx, name + " = " + value);
+        return 1;
+    }
+
+    private static int mode(CommandContext<CommandSourceStack> ctx, String requested) {
+        XrayConfig cfg = XrayConfig.get();
+        if (requested == null) {
+            cfg.mode = XrayState.isXrayMode() ? "esp" : "xray";
+        } else {
+            cfg.mode = requested;
+        }
+        XrayConfig.save();
+        XrayState.rebuild();
+        ClientHooks.onModeChanged();
+        feedback(ctx, "mode = " + XrayState.mode()
+                + " (" + (XrayState.isXrayMode() ? "ẩn địa hình" : "địa hình bình thường + khung ESP") + ")");
+        return 1;
+    }
+
+    private static int radius(CommandContext<CommandSourceStack> ctx) {
+        int value = IntegerArgumentType.getInteger(ctx, "blocks");
+        XrayConfig.get().espRadius = value;
+        XrayConfig.save();
+        feedback(ctx, "espRadius = " + value);
         return 1;
     }
 

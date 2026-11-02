@@ -22,7 +22,8 @@ public final class XrayHud {
             return;
         }
         Font font = mc.font;
-        Component line = Component.literal("XRAY ").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)
+        String mode = XrayState.isXrayMode() ? "XRAY" : "ESP";
+        Component line = Component.literal(mode + " ").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)
                 .append(Component.literal(String.join("+", XrayState.activeGroupIds()))
                         .withStyle(ChatFormatting.WHITE));
         int x = 4;

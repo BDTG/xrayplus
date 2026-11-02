@@ -10,18 +10,30 @@ Mod **Xray client-side** cho Minecraft **1.20.1 / Forge 47.x**, được dựng 
 
 ---
 
+## Hai chế độ
+
+| Mode | Hành vi | Dùng khi nào |
+|---|---|---|
+| **ESP** (mặc định) | Địa hình render **bình thường**, mỗi block trong danh sách được vẽ **khung màu xuyên tường** | Chơi/đi lại bình thường, vẫn thấy đường, vẫn định hướng — quặng hiện thành khung |
+| **XRAY** | Ẩn mọi block không có trong danh sách (địa hình trong suốt) | Nhìn bao quát cả mạch quặng; có thể bật `outlineTerrain` để vẽ viền mờ các block quanh người cho dễ đi |
+
+Đổi bằng `/xray mode esp|xray`, nút **Mode** trong `F9`, hoặc sửa `"mode"` trong config.
+
+Màu khung: quặng vàng hổ phách, rương xanh lá, spawner đỏ, portal tím (đổi được bằng `"color": "#RRGGBB"` cho từng group).
+
 ## Tính năng
 
 | Tính năng | Mô tả |
 |---|---|
-| Ẩn mọi khối không nằm trong danh sách | Chỉ còn quặng / rương / spawner… hiện ra, địa hình trong suốt |
-| Fullbright | Ghi đè lightmap thành trắng → thấy quặng trong hang tối, ban đêm, không cần torch |
+| ESP xuyên tường | Khung 3D quanh quặng/rương/spawner, địa hình vẫn bình thường nên không mất định hướng |
+| Xray cổ điển | Ẩn block không nằm trong danh sách — vẫn giữ làm tuỳ chọn |
+| Fullbright | Ghi đè lightmap thành trắng → thấy rõ trong hang tối, ban đêm |
 | 4 nhóm mặc định | `ores`, `containers`, `spawners`, `portals` — bật/tắt từng nhóm |
 | Tự dò quặng | Block nào có id chứa `_ore` / `raw_..._block` sẽ tự động được thêm (bắt được quặng của mod) |
 | Tag của Forge | Đọc `forge:ores`, `c:ores` → quặng của mod nào có tag là hiện |
-| `/xray` command | thêm/xoá block, bật/tắt nhóm, reload config ngay trong game |
+| `/xray` command | thêm/xoá block, bật/tắt nhóm, đổi mode, chỉnh bán kính, reload config ngay trong game |
 | GUI cấu hình | `F9` hoặc Mods → XrayPlus → Config |
-| HUD nhỏ | Góc trên trái hiện `XRAY ores+containers` khi đang bật |
+| HUD nhỏ | Góc trên trái hiện `ESP ores+containers` khi đang bật |
 | Config JSON | `config/xrayplus.json`, sửa tay được, có `/xray reload` |
 
 ## Yêu cầu
@@ -54,6 +66,10 @@ trong pack — `X` đã bị 4 mod khác giành).
 /xray on | off
 /xray status              trạng thái + số block đang hiện
 /xray list                liệt kê block đang hiện
+/xray mode esp|xray       đổi chế độ (không tham số = đảo mode)
+/xray radius 48           bán kính quét ESP (8–96 block)
+/xray through on|off      khung xuyên tường hay không
+/xray outline on|off      (mode xray) vẽ viền mờ block quanh người
 /xray groups              trạng thái các nhóm
 /xray group <id> on|off   bật/tắt 1 nhóm (ores, containers, spawners, portals)
 /xray add <block_id>      luôn hiện block này
@@ -72,6 +88,12 @@ trong pack — `X` đã bị 4 mod khác giành).
 ```json
 {
   "enabled": false,
+  "mode": "esp",
+  "espRadius": 48,
+  "espThroughWalls": true,
+  "espMaxBlocks": 400,
+  "outlineTerrain": true,
+  "outlineRadius": 10,
   "fullbright": true,
   "hud": true,
   "nameHeuristic": true,
@@ -80,7 +102,8 @@ trong pack — `X` đã bị 4 mod khác giành).
       "id": "ores",
       "enabled": true,
       "tags": ["forge:ores", "c:ores"],
-      "blocks": ["minecraft:ancient_debris", "minecraft:amethyst_cluster"]
+      "blocks": ["minecraft:ancient_debris", "minecraft:amethyst_cluster"],
+      "color": "#FFC24A"
     },
     {
       "id": "containers",
@@ -110,31 +133,41 @@ Ba mixin, tất cả đều client-side:
 3. `LightTextureMixin` — với Xray bật, ghi 16×16 pixel của lightmap thành trắng và upload. Cách này
    không phụ thuộc renderer nào (vanilla, Embeddium, Oculus đều sample cùng một texture lightmap).
 
+**Mode ESP** không dùng mixin nào: mỗi 10 tick nó quét các chunk section quanh người chơi
+(`LevelChunkSection#maybeHas` để bỏ qua section rỗng), lấy block thuộc whitelist, rồi vẽ khung bằng
+`RenderLevelStageEvent.Stage.AFTER_LEVEL` → `LevelRenderer.renderLineBox` vào một batch
+`POSITION_COLOR_NORMAL` với shader `rendertype_lines`. Khi `espThroughWalls = true` thì tắt depth test
+nên khung nhìn xuyên đá; tắt option đó thì khung bị che như block bình thường.
+
 Bật/tắt sẽ gọi `LevelRenderer#allChanged()` để dựng lại chunk mesh ngay (Embeddium cũng hook hàm này),
 nên không cần F3+A bằng tay.
 
 ## Giới hạn đã biết
 
-- **Occlusion culling**: cả vanilla lẫn Embeddium đều bỏ qua những *section* 16×16×16 bị đá bịt kín
-  hoàn toàn. Với pack có Embeddium, XrayPlus tự tắt occlusion culling của Embeddium khi bật Xray
+- **ESP** chỉ quét trong bán kính `espRadius` (mặc định 48 block) và tối đa `espMaxBlocks` khung, nên
+  quặng ở rất xa không hiện — tăng bằng `/xray radius 96`.
+- **XRAY**: cả vanilla lẫn Embeddium đều bỏ qua những *section* 16×16×16 bị đá bịt kín hoàn toàn. Với
+  pack có Embeddium, XrayPlus tự tắt occlusion culling của Embeddium **khi ở mode XRAY**
   (`OcclusionCuller#findVisible` → `useOcclusionCulling = false`), nên quặng trong section kín vẫn
   hiện. Nếu chạy **không** có Embeddium/Sodium thì chỉ có hook vanilla và quặng trong section kín
   hoàn toàn có thể không hiện.
 - **Shader pack (Oculus)**: fullbright dùng lightmap nên vẫn ăn với phần lớn shader, nhưng một số
-  shader tự tính ánh sáng từ shadow map — khi đó bật/tắt shader sẽ thấy khác nhau.
+  shader tự tính ánh sáng từ shadow map — khi đó bật/tắt shader sẽ thấy khác nhau. Khung ESP vẽ ở
+  stage `AFTER_LEVEL` nên vẫn hiện trên shader.
 - Không ẩn chất lỏng (nước/dung nham) vì chúng đi qua `LiquidBlockRenderer`/`FluidRenderer` riêng.
 - Không có "cave finder"/"chỉ hiện block trong suốt" — cố tình giữ mod nhỏ và ít xung đột.
 
 ## Ảnh chụp thật (Soulrend v8.5.2, Forge 1.20.1, 509 mod)
 
-Cùng một khu vực spawn, chụp thẳng từ cửa sổ game:
+**Mode ESP** — địa hình bình thường, khung vàng hổ phách quanh quặng vẽ xuyên qua tán cây/đá:
+
+![esp](docs/xray-esp.png)
+
+**Mode XRAY** — ẩn địa hình, chỉ còn block trong danh sách (dùng khi muốn nhìn bao quát mạch quặng):
 
 | Xray tắt | Xray bật (`` ` ``) |
 |---|---|
 | ![off](docs/xray-off.png) | ![on](docs/xray-on.png) |
-
-Ảnh bên phải: địa hình biến mất, chỉ còn quặng/khối trong danh sách hiện lên, lightmap bị ghi trắng
-nên ban đêm vẫn sáng, góc trên trái có HUD `XRAY ores+containers+spawners`.
 
 ## Kiểm chứng thực tế
 

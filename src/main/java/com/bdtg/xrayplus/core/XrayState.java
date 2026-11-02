@@ -14,8 +14,10 @@ import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -23,8 +25,12 @@ import java.util.Set;
  * atomically, so chunk builder threads always read a consistent set.
  */
 public final class XrayState {
+    public static final String MODE_ESP = "esp";
+    public static final String MODE_XRAY = "xray";
+
     private static volatile boolean active = false;
     private static volatile Set<Block> visible = Collections.emptySet();
+    private static volatile Map<Block, Integer> colors = Map.of();
     private static volatile List<String> activeGroups = List.of();
 
     private XrayState() {
@@ -42,12 +48,32 @@ public final class XrayState {
         return activeGroups;
     }
 
+    public static String mode() {
+        String m = XrayConfig.get().mode;
+        return MODE_XRAY.equalsIgnoreCase(m) ? MODE_XRAY : MODE_ESP;
+    }
+
+    public static boolean isXrayMode() {
+        return MODE_XRAY.equals(mode());
+    }
+
+    /** ESP colour of a block (gold when the block has no group colour). */
+    public static int colorOf(Block block) {
+        Integer c = colors.get(block);
+        return c == null ? 0xFFFFC24A : c;
+    }
+
+    /** True when the block belongs to an enabled group (used by the ESP scanner). */
+    public static boolean shouldShow(BlockState state) {
+        return visible.contains(state.getBlock());
+    }
+
     /**
      * Called from the chunk mesh builder for every block. Must stay allocation free and cheap:
-     * it runs millions of times while terrain is being built.
+     * it runs millions of times while terrain is being built. Only XRAY mode hides anything.
      */
     public static boolean shouldHide(BlockState state) {
-        if (!active) {
+        if (!active || !isXrayMode()) {
             return false;
         }
         Block block = state.getBlock();
@@ -87,14 +113,15 @@ public final class XrayState {
         active = value;
         XrayConfig.get().enabled = value;
         XrayConfig.save();
-        XrayPlus.LOGGER.info("[XrayPlus] Xray {}", value ? "enabled" : "disabled");
-        ClientHooks.refreshWorld();
+        XrayPlus.LOGGER.info("[XrayPlus] {} {}", mode(), value ? "enabled" : "disabled");
+        ClientHooks.onModeChanged();
     }
 
-    /** Re-resolves groups/tags and block ids into a plain Set<Block>. */
+    /** Re-resolves groups/tags and block ids into a plain Set<Block> plus ESP colours. */
     public static void rebuild() {
         XrayConfig cfg = XrayConfig.get();
         Set<Block> set = new HashSet<>(256);
+        Map<Block, Integer> palette = new HashMap<>(256);
         List<String> groups = new ArrayList<>();
 
         for (XrayConfig.Group group : cfg.groups) {
@@ -102,11 +129,14 @@ public final class XrayState {
                 continue;
             }
             groups.add(group.id);
+            int color = group.color();
             for (String tagId : group.tags) {
                 try {
                     TagKey<Block> key = TagKey.create(Registries.BLOCK, new ResourceLocation(tagId));
-                    BuiltInRegistries.BLOCK.getTag(key).ifPresent(holders ->
-                            holders.forEach(holder -> set.add(holder.value())));
+                    BuiltInRegistries.BLOCK.getTag(key).ifPresent(holders -> holders.forEach(holder -> {
+                        set.add(holder.value());
+                        palette.put(holder.value(), color);
+                    }));
                 } catch (Exception e) {
                     XrayPlus.LOGGER.warn("[XrayPlus] Skipping bad block tag '{}'", tagId);
                 }
@@ -115,6 +145,7 @@ public final class XrayState {
                 Block block = resolve(blockId);
                 if (block != null) {
                     set.add(block);
+                    palette.put(block, color);
                 }
             }
         }
@@ -123,6 +154,7 @@ public final class XrayState {
             Block block = resolve(blockId);
             if (block != null) {
                 set.add(block);
+                palette.putIfAbsent(block, 0xFFFFC24A);
             }
         }
 
@@ -136,6 +168,7 @@ public final class XrayState {
                 if (path.endsWith("_ore") || path.startsWith("ore_") || path.contains("_ore_")
                         || path.contains("raw_") && path.endsWith("_block")) {
                     set.add(block);
+                    palette.putIfAbsent(block, 0xFFFFC24A);
                 }
             }
         }
@@ -144,11 +177,13 @@ public final class XrayState {
             Block block = resolve(blockId);
             if (block != null) {
                 set.remove(block);
+                palette.remove(block);
             }
         }
 
         set.add(Blocks.AIR);
         visible = set;
+        colors = Map.copyOf(palette);
         activeGroups = List.copyOf(groups);
         XrayPlus.LOGGER.debug("[XrayPlus] {} visible blocks from groups {}", set.size(), groups);
     }

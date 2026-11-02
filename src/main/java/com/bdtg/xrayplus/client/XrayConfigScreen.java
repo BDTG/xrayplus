@@ -30,6 +30,28 @@ public class XrayConfigScreen extends Screen {
         }).bounds(center - 120, y, 240, 20).build());
         y += step;
 
+        this.addRenderableWidget(Button.builder(
+                Component.literal("Mode: ").append(Component.literal(XrayState.isXrayMode() ? "XRAY" : "ESP")
+                        .withStyle(XrayState.isXrayMode() ? net.minecraft.ChatFormatting.RED
+                                : net.minecraft.ChatFormatting.GREEN)), button -> {
+            XrayConfig.get().mode = XrayState.isXrayMode() ? "esp" : "xray";
+            XrayConfig.save();
+            XrayState.rebuild();
+            ClientHooks.onModeChanged();
+            button.setMessage(Component.literal("Mode: ").append(
+                    Component.literal(XrayState.isXrayMode() ? "XRAY" : "ESP")
+                            .withStyle(XrayState.isXrayMode() ? net.minecraft.ChatFormatting.RED
+                                    : net.minecraft.ChatFormatting.GREEN)));
+        }).bounds(center - 120, y, 240, 20).build());
+        y += step;
+
+        this.addRenderableWidget(Button.builder(toggleLabel("ESP through walls", cfg.espThroughWalls), button -> {
+            cfg.espThroughWalls = !cfg.espThroughWalls;
+            XrayConfig.save();
+            button.setMessage(toggleLabel("ESP through walls", cfg.espThroughWalls));
+        }).bounds(center - 120, y, 240, 20).build());
+        y += step;
+
         this.addRenderableWidget(Button.builder(toggleLabel("Fullbright", cfg.fullbright), button -> {
             cfg.fullbright = !cfg.fullbright;
             XrayConfig.save();

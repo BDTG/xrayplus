@@ -28,6 +28,29 @@ public final class ClientHooks {
         }
     }
 
+    /** Forces the lightmap to recompute; drops the forced fullbright when the mod is off. */
+    public static void refreshLightmap() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.gameRenderer != null && mc.gameRenderer.lightTexture() != null) {
+            mc.gameRenderer.lightTexture().tick();
+        }
+    }
+
+    /**
+     * Called when the mode or whitelist changes. Only XRAY mode alters chunk meshes; ESP keeps the
+     * normal terrain and just needs the lightmap refreshed.
+     */
+    public static void onModeChanged() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) {
+            return;
+        }
+        if (XrayState.isXrayMode() && mc.levelRenderer != null) {
+            mc.levelRenderer.allChanged();
+        }
+        refreshLightmap();
+    }
+
     public static void openConfigScreen(Screen parent) {
         Minecraft.getInstance().setScreen(new XrayConfigScreen(parent));
     }

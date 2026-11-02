@@ -39,6 +39,7 @@ public final class ClientBootstrap {
         modBus.addListener(ClientBootstrap::registerKeys);
 
         MinecraftForge.EVENT_BUS.register(ForgeEvents.class);
+        MinecraftForge.EVENT_BUS.register(XrayEspRenderer.class);
 
         ModLoadingContext.get().registerExtensionPoint(ConfigScreenHandler.ConfigScreenFactory.class,
                 () -> new ConfigScreenHandler.ConfigScreenFactory(

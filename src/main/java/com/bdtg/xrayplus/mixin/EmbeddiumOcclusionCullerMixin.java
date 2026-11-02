@@ -17,6 +17,6 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 public abstract class EmbeddiumOcclusionCullerMixin {
     @ModifyVariable(method = "findVisible", at = @At("HEAD"), argsOnly = true, index = 4, remap = false, require = 0)
     private boolean xrayplus$disableOcclusionCulling(boolean useOcclusionCulling) {
-        return XrayState.isActive() ? false : useOcclusionCulling;
+        return XrayState.isActive() && XrayState.isXrayMode() ? false : useOcclusionCulling;
     }
 }
