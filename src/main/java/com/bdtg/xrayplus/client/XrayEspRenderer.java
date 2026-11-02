@@ -183,7 +183,10 @@ public final class XrayEspRenderer {
 
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL || !XrayState.isActive()) {
+        // AFTER_TRANSLUCENT_BLOCKS is still inside LevelRenderer's render pass, so the shader's
+        // model-view matrix is the camera one. Drawing at AFTER_LEVEL leaves an identity model-view
+        // and the boxes end up glued to the camera (they appear to follow the player).
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS || !XrayState.isActive()) {
             return;
         }
         List<Box> outline = silhouettes;
