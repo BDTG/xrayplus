@@ -68,6 +68,11 @@ public final class XrayState {
         return visible.contains(state.getBlock());
     }
 
+    /** True when the block id is part of the current whitelist. */
+    public static boolean contains(Block block) {
+        return visible.contains(block);
+    }
+
     /**
      * Called from the chunk mesh builder for every block. Must stay allocation free and cheap:
      * it runs millions of times while terrain is being built. Only XRAY mode hides anything.
@@ -165,8 +170,7 @@ public final class XrayState {
                     continue;
                 }
                 String path = id.getPath();
-                if (path.endsWith("_ore") || path.startsWith("ore_") || path.contains("_ore_")
-                        || path.contains("raw_") && path.endsWith("_block")) {
+                if (looksLikeOre(path)) {
                     set.add(block);
                     palette.putIfAbsent(block, 0xFFFFC24A);
                 }
@@ -198,5 +202,24 @@ public final class XrayState {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * Name heuristic used both when building the whitelist and by /xray audit, so "detected" and
+     * "reported missing" can never disagree.
+     *
+     * <p>Decorative look-alikes (crystal lamps, crystal chests, sea shelves, displays, skeletons)
+     * are excluded on purpose: they are furniture, not ore, and used to spam ESP boxes.</p>
+     */
+    public static boolean looksLikeOre(String path) {
+        if (path.endsWith("_lamp") || path.endsWith("_display") || path.endsWith("_seashelf")
+                || path.endsWith("_skeleton") || path.endsWith("_chest") || path.endsWith("_barrel")
+                || path.contains("mucus")) {
+            return false;
+        }
+        return path.endsWith("_ore") || path.startsWith("ore_") || path.contains("_ore_")
+                || path.contains("geode") || path.endsWith("_cluster") || path.contains("debris")
+                || path.contains("crystal") || path.endsWith("_ore_block")
+                || path.startsWith("raw_") && path.endsWith("_block");
     }
 }

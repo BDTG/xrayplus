@@ -1,8 +1,8 @@
 package com.bdtg.xrayplus.client;
 
+import com.bdtg.xrayplus.XrayPlus;
 import com.bdtg.xrayplus.config.XrayConfig;
 import com.bdtg.xrayplus.core.XrayState;
-import com.bdtg.xrayplus.XrayPlus;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.BufferUploader;
@@ -15,6 +15,8 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
@@ -23,31 +25,71 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * ESP mode: terrain renders completely normally (so you can navigate), and every block in the
  * whitelist gets a coloured box drawn through walls.
  *
- * <p>Boxes are collected every 10 ticks by walking loaded chunk sections whose palette can contain
- * a target ({@link LevelChunkSection#maybeHas}), then drawn once per frame with a manual
- * {@code DEBUG_LINES} batch so depth test can be switched off without a custom RenderType.</p>
+ * <p>One scan every 10 ticks walks loaded chunk sections whose palette can contain a target
+ * ({@link LevelChunkSection#maybeHas}) and fills two things: the boxes to draw and a per-block
+ * statistic table (count + nearest position) used by {@code /xray scan} and {@code /xray find}.</p>
  */
 public final class XrayEspRenderer {
+    public static final int FOCUS_COLOR = 0xFF00E5FF;
+
     private static final int SCAN_INTERVAL_TICKS = 10;
     private static final float LINE_WIDTH = 2.0F;
 
     private static volatile List<Box> targets = List.of();
     private static volatile List<Box> silhouettes = List.of();
+    private static volatile Map<Block, Stat> stats = Map.of();
+    private static volatile boolean forceScan = true;
     private static long lastScan = -10_000L;
 
     private XrayEspRenderer() {
     }
 
     private record Box(BlockPos pos, int color) {
+    }
+
+    /** Per-block result of the last scan. */
+    public record Stat(BlockPos nearest, double distance, int count) {
+    }
+
+    /** Aggregated scan output grouped by block, nearest first. */
+    public static List<Map.Entry<Block, Stat>> sortedStats() {
+        List<Map.Entry<Block, Stat>> list = new ArrayList<>(stats.entrySet());
+        list.sort(Comparator.comparingDouble(e -> e.getValue().distance()));
+        return list;
+    }
+
+    public static Stat statOf(Block block) {
+        return stats.get(block);
+    }
+
+    public static boolean hasFocus() {
+        return focusBlock() != null;
+    }
+
+    /** Resolved focus block from the config, or null. */
+    public static Block focusBlock() {
+        String id = XrayConfig.get().focusBlock;
+        if (id == null || id.isBlank()) {
+            return null;
+        }
+        return XrayState.resolve(id);
+    }
+
+    public static void requestScan() {
+        forceScan = true;
     }
 
     @SubscribeEvent
@@ -59,12 +101,14 @@ public final class XrayEspRenderer {
         if (mc.level == null || mc.player == null || !XrayState.isActive()) {
             targets = List.of();
             silhouettes = List.of();
+            stats = Map.of();
             return;
         }
         long now = mc.level.getGameTime();
-        if (now - lastScan < SCAN_INTERVAL_TICKS) {
+        if (!forceScan && now - lastScan < SCAN_INTERVAL_TICKS) {
             return;
         }
+        forceScan = false;
         lastScan = now;
         try {
             scan(mc);
@@ -72,6 +116,7 @@ public final class XrayEspRenderer {
             XrayPlus.LOGGER.error("[XrayPlus] esp scan failed", e);
             targets = List.of();
             silhouettes = List.of();
+            stats = Map.of();
         }
     }
 
@@ -80,23 +125,27 @@ public final class XrayEspRenderer {
         ClientLevel level = mc.level;
         BlockPos center = mc.player.blockPosition();
 
-        boolean wantTargets = !XrayState.isXrayMode();
+        boolean espMode = !XrayState.isXrayMode();
         boolean wantOutline = XrayState.isXrayMode() && cfg.outlineTerrain;
-        if (!wantTargets && !wantOutline) {
-            targets = List.of();
-            silhouettes = List.of();
-            return;
+        Block focus = focusBlock();
+        boolean focusOnly = cfg.focusOnly && focus != null;
+
+        int espRadius = clamp(cfg.espRadius, 8, 96);
+        int scanRadius = clamp(cfg.scanRadius, 8, 128);
+        int outlineRadius = clamp(cfg.outlineRadius, 2, 24);
+        int radius = Math.max(scanRadius, espMode ? espRadius : 0);
+        if (wantOutline) {
+            radius = Math.max(radius, outlineRadius);
         }
 
-        int targetRadius = clamp(cfg.espRadius, 8, 96);
-        int outlineRadius = clamp(cfg.outlineRadius, 2, 24);
-        int radius = wantTargets ? targetRadius : outlineRadius;
         int maxTargets = clamp(cfg.espMaxBlocks, 16, 4096);
         int maxOutline = 900;
 
         List<Box> found = new ArrayList<>();
         List<Box> outline = new ArrayList<>();
+        Map<Block, MutableStat> counted = new HashMap<>(128);
         double radiusSq = (double) radius * radius;
+        double espRadiusSq = (double) espRadius * espRadius;
 
         int minSection = level.getMinSection();
         int maxSection = level.getMaxSection();
@@ -125,7 +174,7 @@ public final class XrayEspRenderer {
                     if (Math.abs(baseY + 8 - center.getY()) > radius + 8) {
                         continue;
                     }
-                    boolean hasTarget = wantTargets && section.maybeHas(XrayState::shouldShow);
+                    boolean hasTarget = section.maybeHas(XrayState::shouldShow);
                     boolean hasSolid = wantOutline && section.maybeHas(state -> !state.isAir());
                     if (!hasTarget && !hasSolid) {
                         continue;
@@ -143,7 +192,8 @@ public final class XrayEspRenderer {
                             for (int z = 0; z < 16; z++) {
                                 int worldZ = worldChunkZ + z;
                                 int dz = worldZ - center.getZ();
-                                if ((double) dx * dx + (double) dz * dz > radiusSq) {
+                                double horizontalSq = (double) dx * dx + (double) dz * dz;
+                                if (horizontalSq > radiusSq) {
                                     continue;
                                 }
                                 BlockState state = section.getBlockState(x, y, z);
@@ -151,11 +201,29 @@ public final class XrayEspRenderer {
                                     continue;
                                 }
                                 if (hasTarget && XrayState.shouldShow(state)) {
-                                    found.add(new Box(new BlockPos(worldX, worldY, worldZ),
-                                            XrayState.colorOf(state.getBlock())));
+                                    Block block = state.getBlock();
+                                    BlockPos blockPos = new BlockPos(worldX, worldY, worldZ);
+                                    double distSq = blockPos.distSqr(center);
+                                    MutableStat stat = counted.computeIfAbsent(block, b -> new MutableStat());
+                                    stat.count++;
+                                    if (distSq < stat.nearestDistSq) {
+                                        stat.nearestDistSq = distSq;
+                                        stat.nearest = blockPos;
+                                    }
+                                    if (espMode && distSq <= espRadiusSq) {
+                                        boolean isFocus = focus != null && block == focus;
+                                        if (!focusOnly || isFocus) {
+                                            int color = isFocus ? FOCUS_COLOR : XrayState.colorOf(block);
+                                            found.add(new Box(blockPos, color));
+                                        }
+                                    }
                                 }
-                                if (hasSolid && state.isSolidRender(level, new BlockPos(worldX, worldY, worldZ))) {
-                                    outline.add(new Box(new BlockPos(worldX, worldY, worldZ), 0xFF8C9AA8));
+                                if (hasSolid && horizontalSq <= (double) outlineRadius * outlineRadius
+                                        && Math.abs(worldY - center.getY()) <= outlineRadius) {
+                                    BlockPos outlinePos = new BlockPos(worldX, worldY, worldZ);
+                                    if (state.isSolidRender(level, outlinePos)) {
+                                        outline.add(new Box(outlinePos, 0xFF8C9AA8));
+                                    }
                                 }
                             }
                         }
@@ -175,10 +243,30 @@ public final class XrayEspRenderer {
 
         targets = List.copyOf(found);
         silhouettes = List.copyOf(outline);
+        stats = freeze(counted, center);
+    }
+
+    private static Map<Block, Stat> freeze(Map<Block, MutableStat> counted, BlockPos center) {
+        Map<Block, Stat> out = new LinkedHashMap<>();
+        for (Map.Entry<Block, MutableStat> entry : counted.entrySet()) {
+            MutableStat stat = entry.getValue();
+            if (stat.nearest == null) {
+                continue;
+            }
+            out.put(entry.getKey(),
+                    new Stat(stat.nearest, Math.sqrt(stat.nearest.distSqr(center)), stat.count));
+        }
+        return Map.copyOf(out);
     }
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static final class MutableStat {
+        private int count;
+        private BlockPos nearest;
+        private double nearestDistSq = Double.MAX_VALUE;
     }
 
     @SubscribeEvent
@@ -249,5 +337,16 @@ public final class XrayEspRenderer {
 
     private static AABB boxOf(BlockPos pos) {
         return new AABB(pos).inflate(0.0015);
+    }
+
+    /** Human readable "12 -34 55" for chat output. */
+    public static String formatPos(BlockPos pos) {
+        return pos.getX() + " " + pos.getY() + " " + pos.getZ();
+    }
+
+    /** Registry id of a block, or "?" when unknown. */
+    public static String nameOf(Block block) {
+        ResourceLocation id = ForgeRegistries.BLOCKS.getKey(block);
+        return id == null ? "?" : id.toString();
     }
 }

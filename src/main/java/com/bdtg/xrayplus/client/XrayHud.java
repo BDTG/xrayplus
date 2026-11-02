@@ -31,5 +31,17 @@ public final class XrayHud {
         int width = font.width(line);
         graphics.fill(x - 2, y - 2, x + width + 2, y + 10, 0x90000000);
         graphics.drawString(font, line, x, y, 0xFFFFFF, false);
+
+        net.minecraft.world.level.block.Block focus = XrayEspRenderer.focusBlock();
+        if (focus != null) {
+            XrayEspRenderer.Stat stat = XrayEspRenderer.statOf(focus);
+            String text = stat == null
+                    ? "◇ " + XrayEspRenderer.nameOf(focus) + " —"
+                    : "◇ " + XrayEspRenderer.nameOf(focus) + " " + Math.round(stat.distance()) + "m";
+            Component focusLine = Component.literal(text).withStyle(ChatFormatting.AQUA);
+            int w2 = font.width(focusLine);
+            graphics.fill(x - 2, y + 10, x + w2 + 2, y + 22, 0x90000000);
+            graphics.drawString(font, focusLine, x, y + 12, 0xFFFFFF, false);
+        }
     }
 }

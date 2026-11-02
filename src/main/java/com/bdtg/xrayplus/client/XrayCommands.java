@@ -1,5 +1,6 @@
 package com.bdtg.xrayplus.client;
 
+import com.bdtg.xrayplus.XrayPlus;
 import com.bdtg.xrayplus.config.XrayConfig;
 import com.bdtg.xrayplus.core.XrayState;
 import com.mojang.brigadier.CommandDispatcher;
@@ -15,12 +16,16 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.StringJoiner;
 
 /** Client-side /xray command tree. */
 public final class XrayCommands {
     private static final int MAX_LISTED = 60;
+    private static final int MAX_SCAN_LINES = 12;
+    private static final int MAX_AUDIT_LINES = 15;
 
     private XrayCommands() {
     }
@@ -62,6 +67,22 @@ public final class XrayCommands {
                         .executes(ctx -> flag(ctx, "outline", !XrayConfig.get().outlineTerrain))
                         .then(Commands.literal("on").executes(ctx -> flag(ctx, "outline", true)))
                         .then(Commands.literal("off").executes(ctx -> flag(ctx, "outline", false))))
+                .then(Commands.literal("find")
+                        .then(Commands.argument("block", ResourceLocationArgument.id())
+                                .executes(ctx -> find(ctx))))
+                .then(Commands.literal("scan")
+                        .executes(ctx -> scan(ctx, -1))
+                        .then(Commands.argument("blocks", IntegerArgumentType.integer(8, 128))
+                                .executes(ctx -> scan(ctx, IntegerArgumentType.getInteger(ctx, "blocks")))))
+                .then(Commands.literal("focus")
+                        .then(Commands.literal("clear").executes(ctx -> setFocus(ctx, null)))
+                        .then(Commands.argument("block", StringArgumentType.word())
+                                .executes(ctx -> setFocus(ctx, StringArgumentType.getString(ctx, "block")))))
+                .then(Commands.literal("onlyfocus")
+                        .executes(ctx -> flag(ctx, "onlyfocus", !XrayConfig.get().focusOnly))
+                        .then(Commands.literal("on").executes(ctx -> flag(ctx, "onlyfocus", true)))
+                        .then(Commands.literal("off").executes(ctx -> flag(ctx, "onlyfocus", false))))
+                .then(Commands.literal("audit").executes(ctx -> audit(ctx)))
                 .then(Commands.literal("groups").executes(ctx -> groups(ctx)))
                 .then(Commands.literal("group")
                         .then(Commands.argument("id", StringArgumentType.word())
@@ -97,6 +118,9 @@ public final class XrayCommands {
         feedback(ctx, "enabled=" + XrayState.isActive()
                 + " mode=" + XrayState.mode()
                 + " radius=" + cfg.espRadius
+                + " scanRadius=" + cfg.scanRadius
+                + " focus=" + (cfg.focusBlock == null ? "-" : cfg.focusBlock)
+                + " onlyFocus=" + cfg.focusOnly
                 + " through=" + cfg.espThroughWalls
                 + " blocks=" + XrayState.visibleCount()
                 + " groups=" + String.join(",", XrayState.activeGroupIds())
@@ -130,10 +154,12 @@ public final class XrayCommands {
             case "heuristic" -> cfg.nameHeuristic = value;
             case "through" -> cfg.espThroughWalls = value;
             case "outline" -> cfg.outlineTerrain = value;
+            case "onlyfocus" -> cfg.focusOnly = value;
             default -> {
             }
         }
         XrayConfig.save();
+        XrayEspRenderer.requestScan();
         if (name.equals("fullbright") || name.equals("heuristic")) {
             XrayState.rebuild();
             ClientHooks.onModeChanged();
@@ -225,6 +251,108 @@ public final class XrayCommands {
             builder.append(" … (+").append(ids.size() - shown).append(" more)");
         }
         feedback(ctx, builder.toString());
+        return 1;
+    }
+
+    /** /xray find <block> - focus a block and report where the nearest one is. */
+    private static int find(CommandContext<CommandSourceStack> ctx) {
+        ResourceLocation id = ResourceLocationArgument.getId(ctx, "block");
+        Block block = ForgeRegistries.BLOCKS.getValue(id);
+        if (block == null) {
+            feedback(ctx, "Unknown block '" + id + "'");
+            return 0;
+        }
+        XrayConfig cfg = XrayConfig.get();
+        cfg.focusBlock = id.toString();
+        XrayConfig.save();
+        XrayEspRenderer.requestScan();
+        XrayEspRenderer.Stat stat = XrayEspRenderer.statOf(block);
+        if (stat == null) {
+            feedback(ctx, "Đặt focus " + id + " — đang quét, gõ /xray scan sau ~1s");
+        } else {
+            feedback(ctx, "Focus " + id + ": " + stat.count() + " block trong " + cfg.scanRadius
+                    + " block, gần nhất " + XrayEspRenderer.formatPos(stat.nearest())
+                    + " (" + Math.round(stat.distance()) + "m)");
+        }
+        return 1;
+    }
+
+    /** /xray focus <block>|clear */
+    private static int setFocus(CommandContext<CommandSourceStack> ctx, String id) {
+        XrayConfig cfg = XrayConfig.get();
+        if (id == null || id.equalsIgnoreCase("clear") || id.equalsIgnoreCase("none")) {
+            cfg.focusBlock = null;
+            XrayConfig.save();
+            XrayEspRenderer.requestScan();
+            feedback(ctx, "Đã bỏ focus");
+            return 1;
+        }
+        Block block = XrayState.resolve(id);
+        if (block == null) {
+            feedback(ctx, "Unknown block '" + id + "'");
+            return 0;
+        }
+        cfg.focusBlock = id;
+        XrayConfig.save();
+        XrayEspRenderer.requestScan();
+        feedback(ctx, "Focus = " + id + " (khung cyan); /xray onlyfocus on để chỉ vẽ block này");
+        return 1;
+    }
+
+    /** /xray scan [radius] - what is around me, grouped by block. */
+    private static int scan(CommandContext<CommandSourceStack> ctx, int radius) {
+        XrayConfig cfg = XrayConfig.get();
+        if (radius > 0) {
+            cfg.scanRadius = radius;
+            XrayConfig.save();
+            XrayEspRenderer.requestScan();
+        }
+        List<Map.Entry<Block, XrayEspRenderer.Stat>> list = XrayEspRenderer.sortedStats();
+        if (list.isEmpty()) {
+            feedback(ctx, "Chưa có dữ liệu quét — bật mod (`) và đứng yên ~1s rồi thử lại");
+            return 0;
+        }
+        int total = 0;
+        for (Map.Entry<Block, XrayEspRenderer.Stat> entry : list) {
+            total += entry.getValue().count();
+        }
+        feedback(ctx, "Trong " + cfg.scanRadius + " block: " + list.size() + " loại, " + total + " block");
+        int shown = 0;
+        for (Map.Entry<Block, XrayEspRenderer.Stat> entry : list) {
+            if (shown++ >= MAX_SCAN_LINES) {
+                break;
+            }
+            XrayEspRenderer.Stat stat = entry.getValue();
+            feedback(ctx, " • " + XrayEspRenderer.nameOf(entry.getKey()) + " ×" + stat.count()
+                    + " — gần nhất " + XrayEspRenderer.formatPos(stat.nearest())
+                    + " (" + Math.round(stat.distance()) + "m)");
+        }
+        if (list.size() > MAX_SCAN_LINES) {
+            feedback(ctx, " … còn " + (list.size() - MAX_SCAN_LINES) + " loại nữa (tăng bán kính: /xray scan 96)");
+        }
+        return 1;
+    }
+
+    /** /xray audit - which ore-looking blocks are NOT in the whitelist. */
+    private static int audit(CommandContext<CommandSourceStack> ctx) {
+        List<String> missing = new ArrayList<>();
+        int oreLike = 0;
+        for (Block block : ForgeRegistries.BLOCKS) {
+            ResourceLocation id = ForgeRegistries.BLOCKS.getKey(block);
+            if (id == null || !XrayState.looksLikeOre(id.getPath())) {
+                continue;
+            }
+            oreLike++;
+            if (!XrayState.contains(block)) {
+                missing.add(id.toString());
+            }
+        }
+        feedback(ctx, "Block giống quặng: " + oreLike + " — chưa nhận diện: " + missing.size());
+        for (int i = 0; i < Math.min(MAX_AUDIT_LINES, missing.size()); i++) {
+            feedback(ctx, " • " + missing.get(i));
+        }
+        XrayPlus.LOGGER.info("[XrayPlus] audit: {} ore-like blocks, {} missing: {}",
+                oreLike, missing.size(), missing);
         return 1;
     }
 }

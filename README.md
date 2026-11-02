@@ -68,6 +68,12 @@ trong pack — `X` đã bị 4 mod khác giành).
 /xray list                liệt kê block đang hiện
 /xray mode esp|xray       đổi chế độ (không tham số = đảo mode)
 /xray radius 48           bán kính quét ESP (8–96 block)
+/xray scan                báo cáo quanh đây có quặng gì (số lượng + toạ độ gần nhất)
+/xray scan 96             quét với bán kính khác (8–128)
+/xray find <block_id>     đặt focus 1 loại quặng + báo vị trí gần nhất
+/xray focus <block_id>    đặt focus (khung cyan), /xray focus clear để bỏ
+/xray onlyfocus on|off    chỉ vẽ đúng block đang focus, ẩn các loại khác
+/xray audit               liệt kê block giống quặng nhưng chưa được nhận diện
 /xray through on|off      khung xuyên tường hay không
 /xray outline on|off      (mode xray) vẽ viền mờ block quanh người
 /xray groups              trạng thái các nhóm
@@ -92,6 +98,9 @@ trong pack — `X` đã bị 4 mod khác giành).
   "espRadius": 48,
   "espThroughWalls": true,
   "espMaxBlocks": 400,
+  "scanRadius": 64,
+  "focusBlock": null,
+  "focusOnly": false,
   "outlineTerrain": true,
   "outlineRadius": 10,
   "fullbright": true,
@@ -156,6 +165,44 @@ nên không cần F3+A bằng tay.
   stage `AFTER_LEVEL` nên vẫn hiện trên shader.
 - Không ẩn chất lỏng (nước/dung nham) vì chúng đi qua `LiquidBlockRenderer`/`FluidRenderer` riêng.
 - Không có "cave finder"/"chỉ hiện block trong suốt" — cố tình giữ mod nhỏ và ít xung đột.
+
+## Quét & tìm quặng
+
+Nhìn tổng quát không cho biết nên đào gì, nên có thêm 2 lệnh:
+
+```
+/xray scan
+  Trong 64 block: 7 loại, 12.415 block
+   • minecraft:coal_ore ×5531 — gần nhất -46 62 24 (12m)
+   • minecraft:copper_ore ×3914 — gần nhất -54 73 24 (14m)
+   • minecraft:iron_ore ×2335 — gần nhất -33 67 26 (9m)
+   • minecraft:lapis_ore ×451 — gần nhất -38 64 31 (11m)
+   • minecraft:gold_ore ×99 — gần nhất -43 24 41 (51m)
+   • minecraft:redstone_ore ×83 — gần nhất -46 11 36 (62m)
+   • minecraft:diamond_ore ×2 — gần nhất -97 10 22 (84m)
+
+/xray find minecraft:diamond_ore
+  Focus minecraft:diamond_ore: 2 block trong 64 block, gần nhất -97 10 22 (84m)
+```
+
+`/xray find` set luôn **focus**: block đó được vẽ khung **cyan** nổi bật; `/xray onlyfocus on` thì chỉ vẽ đúng nó.
+HUD thêm dòng `◇ minecraft:diamond_ore 84m`. Bán kính quét là hình trụ (X/Z ± R, Y ± R), mặc định 64.
+
+## Độ phủ quặng (kiểm tra thật, không đoán)
+
+`/xray audit` duyệt toàn bộ block registry của pack và so với whitelist. Kết quả chạy thật trong Soulrend v8.5.2:
+
+```
+whitelist=141  oreLike=131  missing=0
+```
+
+Nghĩa là **131/131 block giống quặng đã được nhận diện**, gồm quặng của: vanilla (kể cả deepslate),
+`cinderscapes`, `natures_spirit`, `cataclysm`, `soulsweapons`, `outer_end`, `irons_spellbooks`,
+`dungeons_and_combat`, `iceandfire`, `samurai_dynasty`, `deeperdarker`, `alexscaves`, `quark`, `create`.
+
+Heuristic cố tình **loại** các block chỉ giống quặng về tên như `*_crystal_lamp`, `crystal_chest`,
+`crystal_barrel`, `*_display`, `*_skeleton`, `crystal_seashelf` — chúng là nội thất, không phải quặng,
+và từng làm ESP vẽ kín màn hình.
 
 ## Ảnh chụp thật (Soulrend v8.5.2, Forge 1.20.1, 509 mod)
 

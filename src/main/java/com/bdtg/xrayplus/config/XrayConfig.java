@@ -39,6 +39,12 @@ public final class XrayConfig {
     public boolean espThroughWalls = true;
     /** Hard cap on rendered boxes so big caves stay smooth. */
     public int espMaxBlocks = 400;
+    /** Radius used by /xray scan and /xray find statistics. */
+    public int scanRadius = 64;
+    /** Block id highlighted as search target, e.g. "minecraft:diamond_ore". Null = none. */
+    public String focusBlock = null;
+    /** When a focus block is set, draw only that block instead of the whole whitelist. */
+    public boolean focusOnly = false;
     /** In xray mode, draw faint silhouettes of nearby solid blocks so you can still navigate. */
     public boolean outlineTerrain = true;
     /** Radius of that silhouette pass. */
@@ -91,7 +97,8 @@ public final class XrayConfig {
     private static List<Group> defaultGroups() {
         List<Group> list = new ArrayList<>();
         list.add(new Group("ores", true,
-                List.of("forge:ores", "c:ores"),
+                List.of("forge:ores", "c:ores", "forge:ores_in_ground/stone",
+                        "forge:ores_in_ground/deepslate", "forge:ores_in_ground/netherrack"),
                 List.of("minecraft:ancient_debris",
                         "minecraft:amethyst_cluster",
                         "minecraft:budding_amethyst",
