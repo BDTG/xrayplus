@@ -32,7 +32,7 @@ Màu khung: quặng vàng hổ phách, rương xanh lá, spawner đỏ, portal t
 | Tự dò quặng | Block nào có id chứa `_ore` / `raw_..._block` sẽ tự động được thêm (bắt được quặng của mod) |
 | Tag của Forge | Đọc `forge:ores`, `c:ores` → quặng của mod nào có tag là hiện |
 | `/xray` command | thêm/xoá block, bật/tắt nhóm, đổi mode, chỉnh bán kính, reload config ngay trong game |
-| GUI cấu hình | `F9` hoặc Mods → XrayPlus → Config |
+| GUI cấu hình | `F9` — bật/tắt, đổi mode, chọn nhóm, **danh sách quặng quanh đây, bấm 1 dòng là focus** |
 | HUD nhỏ | Góc trên trái hiện `ESP ores+containers` khi đang bật |
 | Config JSON | `config/xrayplus.json`, sửa tay được, có `/xray reload` |
 
@@ -45,7 +45,7 @@ Màu khung: quặng vàng hổ phách, rương xanh lá, spawner đỏ, portal t
 
 ## Cài đặt
 
-1. Tải `xrayplus-1.0.0.jar` (build từ source hoặc Release).
+1. Tải `xrayplus-1.3.0.jar` (build từ source hoặc Release).
 2. Bỏ vào `.../instances/Soulrend - Dark Fantasy RPG Soulslike/minecraft/mods/`.
 3. Khởi động lại game.
 
@@ -59,7 +59,22 @@ Trong game:
 Phím đổi được ở **Options → Controls → Key Binds → XrayPlus** (mặc định không đè phím của mod nào
 trong pack — `X` đã bị 4 mod khác giành).
 
-## Lệnh
+## Bảng F9
+
+![Bảng F9](docs/f9-menu.png)
+
+Không cần gõ lệnh nào — mọi thứ ở đây:
+
+| Cột trái | Cột phải (danh sách quét được) |
+|---|---|
+| `Xray: ON/OFF` — bật/tắt chính | Mỗi dòng: `<block_id> ×<số block> <khoảng cách>` |
+| `Mode: ESP/XRAY` | **Bấm 1 dòng = đặt focus**, khung cyan, HUD hiện khoảng cách |
+| `Xuyên tường`, `Fullbright`, `HUD`, `Tự dò quặng` | `Quét lại` — quét lại ngay (chạy được cả khi game đang pause) |
+| `ores`, `containers`, `spawners`, `portals` | `Bỏ focus`, `Chỉ focus: ON/OFF`, `Bán kính: 16→…→96` |
+
+Danh sách sắp theo số lượng giảm dần, cuộn được bằng chuột. Bấm `Done` để đóng.
+
+## Lệnh (tuỳ chọn — F9 làm được hết, lệnh chỉ để script hoá)
 
 ```
 /xray                     bật/tắt
